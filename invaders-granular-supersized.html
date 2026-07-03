@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#000000">
+<title>Babar's Space Invaders Granular Synth</title>
+<style>
+  :root{ --green:#54f06a; --greendim:#1f7a34; --amber:#ffd34d; --ink:#bfffcb;
+    --mono:'Courier New',ui-monospace,Menlo,Consolas,monospace; }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:#000; color:var(--green); font-family:var(--mono); overflow:hidden; height:100dvh; position:relative;
+    -webkit-font-smoothing:none}
+  canvas#screen{position:fixed; inset:0; width:100%; height:100%; display:block; z-index:0; image-rendering:pixelated}
+  /* CRT scanlines */
+  .scan{position:fixed; inset:0; z-index:1; pointer-events:none; opacity:.5;
+    background:repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0, rgba(0,0,0,0) 2px, rgba(0,0,0,.5) 3px, rgba(0,0,0,.5) 4px)}
+  .vig{position:fixed; inset:0; z-index:1; pointer-events:none;
+    background:radial-gradient(120% 100% at 50% 50%, transparent 60%, rgba(0,0,0,.7) 100%)}
+
+  .gate{position:fixed; inset:0; z-index:5; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:24px; background:#000; text-align:center; padding:24px}
+  .gate.hide{opacity:0; pointer-events:none; transition:opacity 1s ease}
+  .gate h1{font-size:clamp(13px,4vw,20px); letter-spacing:.18em; margin:0; color:var(--green); text-shadow:0 0 12px rgba(84,240,106,.6); line-height:1.7}
+  .gate .blurb{font-size:11px; letter-spacing:.05em; color:var(--ink); max-width:330px; line-height:1.9; opacity:.85}
+  .gate .how{display:flex; flex-direction:column; gap:9px; max-width:340px}
+  .gate .how p{margin:0; font-size:11px; letter-spacing:.04em; color:var(--green); line-height:1.7}
+  .gate .how b{color:var(--amber)}
+  .gate .note{font-size:10px; letter-spacing:.05em; color:var(--greendim); max-width:320px; line-height:1.7; margin:0}
+  .insert{font-size:13px; letter-spacing:.22em; color:var(--amber); border:2px solid var(--amber); background:#000; padding:16px 30px; cursor:pointer; text-transform:uppercase; animation:blink 1.1s steps(1) infinite}
+  @keyframes blink{50%{opacity:.35}}
+
+  .panel{position:fixed; left:0; right:0; bottom:0; z-index:3; padding:9px 12px calc(9px + env(safe-area-inset-bottom));
+    display:flex; flex-direction:column; gap:8px; align-items:center; background:rgba(0,0,0,.82); border-top:2px solid var(--greendim);
+    opacity:0; transition:opacity .8s ease}
+  .panel.show{opacity:1}
+  .row{display:flex; gap:6px; flex-wrap:wrap; justify-content:center; width:100%; max-width:560px}
+  .btn{font-family:var(--mono); font-weight:bold; font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--green);
+    background:#000; border:1px solid var(--greendim); border-radius:0; padding:7px 10px; cursor:pointer}
+  .btn[aria-pressed="true"]{color:#000; background:var(--green); border-color:var(--green)}
+  .btn.load{color:var(--amber); border-color:var(--amber)}
+  .btn.fire{color:var(--amber); border-color:var(--amber)}
+  .sliders{display:grid; grid-template-columns:1fr 1fr 1fr; gap:7px 14px; width:100%; max-width:560px}
+  .ctl{display:flex; flex-direction:column; gap:3px}
+  .ctl label{font-size:8px; letter-spacing:.1em; text-transform:uppercase; color:var(--greendim); display:flex; justify-content:space-between; font-weight:bold}
+  .ctl label span{color:var(--green)}
+  input[type=range]{-webkit-appearance:none; appearance:none; width:100%; height:2px; background:var(--greendim); outline:none}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none; width:11px; height:14px; background:var(--green); cursor:pointer}
+  input[type=range]::-moz-range-thumb{width:11px; height:14px; border:0; background:var(--green); cursor:pointer}
+
+  .manual-ov{position:fixed; inset:0; z-index:20; background:#000; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:22px 18px calc(46px + env(safe-area-inset-bottom)); display:none}
+  .manual-ov.show{display:block}
+  .mcard{max-width:560px; margin:0 auto}
+  .manual-ov .close{position:sticky; top:0; float:right; font-size:11px; letter-spacing:.12em; color:#000; background:var(--green); border:0; padding:8px 14px; cursor:pointer; font-weight:bold}
+  .manual-ov h2{font-size:14px; letter-spacing:.16em; color:var(--amber); margin:4px 0 2px; text-transform:uppercase}
+  .manual-ov h3{font-size:10px; letter-spacing:.12em; color:var(--green); margin:20px 0 6px; text-transform:uppercase}
+  .manual-ov p{font-size:13px; line-height:1.75; color:var(--ink); margin:0 0 9px; letter-spacing:.02em}
+  .manual-ov b{color:var(--green)}
+  :focus-visible{outline:2px solid var(--amber); outline-offset:2px}
+  @media (prefers-reduced-motion: reduce){ .insert{animation:none} .gate.hide,.panel{transition:none} }
+</style>
+</head>
+<body>
+  <canvas id="screen"></canvas>
+  <div class="scan"></div>
+  <div class="vig"></div>
+
+  <div class="gate" id="gate">
+    <h1>BABAR'S SPACE INVADERS<br>GRANULAR SYNTH</h1>
+    <p class="blurb">the invader formation is the spectrum of one big drone — each invader is a partial of it.</p>
+    <div class="how">
+      <p>▲ <b>TAP AN INVADER TO FIRE.</b> every one you shoot drops that partial out of the drone.</p>
+      <p>tap an empty slot to bring a partial back · NEW WAVE refills the whole spectrum</p>
+      <p>the more you clear, the thinner and faster it gets</p>
+    </div>
+    <p class="note">open in Safari, not WhatsApp's browser — in-app browsers block loading your own sounds</p>
+    <button class="insert" id="begin" type="button">push to start</button>
+  </div>
+
+  <div class="panel" id="panel">
+    <div class="row" id="srcrow">
+      <button class="btn load" id="srcLoad" type="button">♪ load</button>
+      <button class="btn" data-tone="glass" type="button" aria-pressed="true">glass</button>
+      <button class="btn" data-tone="sine" type="button" aria-pressed="false">sine</button>
+      <button class="btn" data-tone="noise" type="button" aria-pressed="false">noise</button>
+      <button class="btn" data-tone="bell" type="button" aria-pressed="false">bell</button>
+      <input id="file" type="file" accept="audio/*,.mp3,.m4a,.aac,.wav,.flac,.ogg,.opus,.aif,.aiff" style="display:none">
+    </div>
+    <div class="row" id="scalerow">
+      <button class="btn" data-scale="major" type="button" aria-pressed="true">major</button>
+      <button class="btn" data-scale="minor" type="button" aria-pressed="false">minor</button>
+      <button class="btn" data-scale="penta" type="button" aria-pressed="false">penta</button>
+      <button class="btn" data-scale="harm" type="button" aria-pressed="false">harm</button>
+      <button class="btn fire" id="reset" type="button">new wave</button>
+      <button class="btn" id="manualBtn" type="button">manual</button>
+    </div>
+    <div class="row" id="formrow">
+      <button class="btn" data-shape="full" type="button">full</button>
+      <button class="btn" data-shape="odd" type="button">odd</button>
+      <button class="btn" data-shape="high" type="button">high</button>
+      <button class="btn" data-shape="low" type="button">low</button>
+      <button class="btn" data-shape="sparse" type="button">sparse</button>
+      <button class="btn" id="linkBtn" type="button">link</button>
+    </div>
+    <div class="row" id="moderow">
+      <button class="btn" id="mTune" type="button" aria-pressed="true">tune · formation = spectrum</button>
+      <button class="btn" id="mNat" type="button" aria-pressed="false">natural · track's own pitch</button>
+      <button class="btn" id="revBtn" type="button" aria-pressed="false">rev grains</button>
+      <button class="btn fire" id="recBtn" type="button">● rec</button>
+    </div>
+    <div class="sliders">
+      <div class="ctl"><label>grain <span id="vSize"></span></label><input id="size" type="range" min="0" max="100" value="48"></div>
+      <div class="ctl"><label>density <span id="vDens"></span></label><input id="density" type="range" min="0" max="100" value="44"></div>
+      <div class="ctl"><label>pitch <span id="vPitch"></span></label><input id="pitch" type="range" min="0" max="100" value="50"></div>
+      <div class="ctl"><label>position <span id="vPos"></span></label><input id="position" type="range" min="0" max="100" value="20"></div>
+      <div class="ctl"><label>spread <span id="vSpread"></span></label><input id="spread" type="range" min="0" max="100" value="22"></div>
+      <div class="ctl"><label>space <span id="vSpace"></span></label><input id="space" type="range" min="0" max="100" value="34"></div>
+      <div class="ctl"><label>level <span id="vLevel"></span></label><input id="level" type="range" min="0" max="100" value="72"></div>
+      <div class="ctl"><label>tone <span id="vTone"></span></label><input id="tone" type="range" min="0" max="100" value="70"></div>
+      <div class="ctl"><label>drift <span id="vDrift"></span></label><input id="drift" type="range" min="0" max="100" value="0"></div>
+    </div>
+  </div>
+
+<script>
+"use strict";
+(function(){
+  const $=id=>document.getElementById(id);
+  const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
+  const lerp=(a,b,t)=>a+(b-a)*t;
+
+  // ---- scales (just intonation ratios per column) ----
+  const SCALES={
+    major:[[1,1],[9,8],[5,4],[4,3],[3,2],[5,3],[15,8]],
+    minor:[[1,1],[9,8],[6,5],[4,3],[3,2],[8,5],[9,5]],
+    penta:[[1,1],[9,8],[5,4],[3,2],[5,3]],
+    harm: [[1,1],[5,4],[3,2],[7,4],[9,4],[11,4]]
+  };
+  const ROW_OCT=[1,0,-1,-2];           // top row up an octave … bottom row two down
+  let scaleName='major';
+
+  // ---- state ----
+  let ctx=null, grainBus=null, marchGain=null, filter=null, dry=null, wet=null, conv=null, limiter=null;
+  let srcBuffer=null, srcName='glass', builtinCache={};
+  let running=false, schedTimer=null, raf=null, nextGrainTime=0, lastFrame=0, T=0;
+  let cells=[], alivePool=[], bullets=[], booms=[];
+  let cols=7, rows=4, score=0, hiscore=990, firedOnce=false;
+  let scanPos=0.2, grainMs=120, density=26, rootSt=0, position=0.2, spread=0.12, space=0.34, level=0.72, pitchMode='tune';
+  let tone=0.7, drift=0, revOn=false, srcBufferRev=null, wave=1, waveFlash=-9, awaitRefill=false;
+  let recNode=null, recSink=null, recOn=false, recChunks=[];
+  let ufo=null, nextUfoAt=14, activeMod=null;
+  const MODS=[
+    {n:'OCTAVE UP',      rate:2,   dens:1, spread:0,   rev:false},
+    {n:'SUB OCTAVE',     rate:0.5, dens:1, spread:0,   rev:false},
+    {n:'DOUBLE DENSITY', rate:1,   dens:2, spread:0,   rev:false},
+    {n:'TIME SMEAR',     rate:1,   dens:1, spread:0.3, rev:false},
+    {n:'REVERSE',        rate:1,   dens:1, spread:0,   rev:true},
+  ];
+  function modNow(){ if(activeMod && T<activeMod.until) return MODS[activeMod.i]; activeMod=null; return null; }
+  function shapeMask(name,r,c,rand){
+    if(name==='odd') return c%2===0;
+    if(name==='high') return r<2;
+    if(name==='low') return r>=2;
+    if(name==='sparse') return (rand?rand():Math.random())<0.35;
+    return true; }
+  let peaks=null, gparts=[];
+  // march
+  let marchX=0, marchDir=1, marchY=0, marchAccum=0, marchStepT=0;
+
+  // ---- builtin tones ----
+  function makeBuiltin(kind){
+    if(builtinCache[kind]) return builtinCache[kind];
+    const sr=ctx.sampleRate, len=Math.floor(sr*2.2), b=ctx.createBuffer(1,len,sr), d=b.getChannelData(0);
+    if(kind==='glass'){ const f=196, p=[[1,1],[2,.5],[3,.34],[4,.22],[5,.15],[6,.1]];
+      for(let i=0;i<len;i++){ const t=i/sr; let s=0; for(const[h,a]of p) s+=a*Math.sin(2*Math.PI*f*h*t); d[i]=s*0.28; } }
+    else if(kind==='sine'){ const f=174.6; for(let i=0;i<len;i++){ const t=i/sr, v=Math.sin(2*Math.PI*5*t)*0.003; d[i]=Math.sin(2*Math.PI*f*t*(1+v))*0.55; } }
+    else if(kind==='noise'){ let lp=0; for(let i=0;i<len;i++){ const w=Math.random()*2-1; lp=lp*0.965+w*0.035; d[i]=lp*2; } }
+    else { const f=261.6, p=[[1,1],[2.76,.5],[5.4,.25],[8.9,.12]];
+      for(let i=0;i<len;i++){ const t=i/sr; let s=0; for(const[h,a]of p) s+=a*Math.sin(2*Math.PI*f*h*t)*Math.exp(-t*1.4); d[i]=s*0.4; } }
+    builtinCache[kind]=b; return b;
+  }
+  function makeIR(sec,decay){ const sr=ctx.sampleRate, len=Math.floor(sr*sec), b=ctx.createBuffer(2,len,sr);
+    for(let c=0;c<2;c++){ const d=b.getChannelData(c); for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/len,decay); } return b; }
+
+  // ---- audio graph ----
+  function ensureCtx(){
+    if(ctx) return;
+    const AC=window.AudioContext||window.webkitAudioContext; ctx=new AC();
+    grainBus=ctx.createGain(); grainBus.gain.value=0.0001;
+    marchGain=ctx.createGain(); marchGain.gain.value=1;
+    filter=ctx.createBiquadFilter(); filter.type='lowpass'; filter.frequency.value=6800; filter.Q.value=0.5;
+    dry=ctx.createGain(); dry.gain.value=0.9;
+    conv=ctx.createConvolver(); conv.buffer=makeIR(2.2,2.4);
+    wet=ctx.createGain(); wet.gain.value=space;
+    limiter=ctx.createDynamicsCompressor(); limiter.threshold.value=-6; limiter.knee.value=22; limiter.ratio.value=12; limiter.attack.value=0.004; limiter.release.value=0.25;
+    grainBus.connect(marchGain); marchGain.connect(filter);
+    filter.connect(dry); dry.connect(limiter);
+    filter.connect(conv); conv.connect(wet); wet.connect(limiter);
+    limiter.connect(ctx.destination);
+    recNode=ctx.createScriptProcessor(4096,2,2);
+    recSink=ctx.createGain(); recSink.gain.value=0;
+    limiter.connect(recNode); recNode.connect(recSink); recSink.connect(ctx.destination);
+    recNode.onaudioprocess=e=>{ if(!recOn)return;
+      if(recChunks.length*4096 > ctx.sampleRate*60*10){ toggleRecord(); return; }
+      recChunks.push([new Float32Array(e.inputBuffer.getChannelData(0)), new Float32Array(e.inputBuffer.getChannelData(1))]); };
+    try{ const sb=ctx.createBufferSource(); sb.buffer=ctx.createBuffer(1,Math.floor(ctx.sampleRate*0.5),ctx.sampleRate);
+      sb.loop=true; const sg=ctx.createGain(); sg.gain.value=0; sb.connect(sg); sg.connect(ctx.destination); sb.start(); }catch(e){}
+    const wake=()=>{ if(ctx&&running&&ctx.state!=='running') ctx.resume().catch(()=>{}); };
+    ctx.onstatechange=wake; ['pointerdown','touchstart','touchend','keydown'].forEach(ev=>document.addEventListener(ev,wake,{passive:true})); setInterval(wake,3000);
+  }
+  function computePeaks(buf){ const d=buf.getChannelData(0), N=200, out=new Float32Array(N), step=Math.max(1,Math.floor(d.length/N));
+    for(let i=0;i<N;i++){ let mx=0; const s=i*step; for(let k=0;k<step;k+=16){ const v=Math.abs(d[s+k]||0); if(v>mx)mx=v; } out[i]=mx; }
+    let pk=0; for(let i=0;i<N;i++) if(out[i]>pk)pk=out[i]; if(pk>0) for(let i=0;i<N;i++) out[i]/=pk; peaks=out; }
+  function setSource(buf,name){ srcBuffer=buf; srcName=name; computePeaks(buf);
+    const rev=ctx.createBuffer(1,buf.length,buf.sampleRate), rd=rev.getChannelData(0), sd=buf.getChannelData(0);
+    for(let i=0,n=buf.length;i<n;i++) rd[i]=sd[n-1-i];
+    srcBufferRev=rev; }
+  function baseRate(){ return Math.pow(2,rootSt/12); }
+
+  function encodeWav16(chL,chR,sr){ const n=chL.length, ab=new ArrayBuffer(44+n*4), dv=new DataView(ab);
+    const ws=(o,t)=>{for(let i=0;i<t.length;i++)dv.setUint8(o+i,t.charCodeAt(i));};
+    ws(0,'RIFF'); dv.setUint32(4,36+n*4,true); ws(8,'WAVE'); ws(12,'fmt '); dv.setUint32(16,16,true);
+    dv.setUint16(20,1,true); dv.setUint16(22,2,true); dv.setUint32(24,sr,true); dv.setUint32(28,sr*4,true);
+    dv.setUint16(32,4,true); dv.setUint16(34,16,true); ws(36,'data'); dv.setUint32(40,n*4,true);
+    let o=44; for(let i=0;i<n;i++){ let a=Math.max(-1,Math.min(1,chL[i])), b=Math.max(-1,Math.min(1,chR[i]));
+      dv.setInt16(o,a<0?a*0x8000:a*0x7FFF,true); dv.setInt16(o+2,b<0?b*0x8000:b*0x7FFF,true); o+=4; } return ab; }
+  function dl(name,data,mime){ const u=URL.createObjectURL(new Blob([data],{type:mime}));
+    const a=document.createElement('a'); a.href=u; a.download=name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(u),5000); }
+  function toggleRecord(){ const b=$('recBtn');
+    if(!recOn){ if(!ctx||!running){ if(b){b.textContent='start first'; setTimeout(()=>b.textContent='● rec',1300);} return; }
+      recChunks=[]; recOn=true; if(b)b.textContent='■ stop'; }
+    else { recOn=false;
+      const total=recChunks.reduce((a,c)=>a+c[0].length,0);
+      if(!total){ if(b)b.textContent='● rec'; return; }
+      const L=new Float32Array(total), R=new Float32Array(total); let o=0;
+      recChunks.forEach(c=>{ L.set(c[0],o); R.set(c[1],o); o+=c[0].length; }); recChunks=[];
+      dl('invaders-'+srcName.replace(/\W+/g,'')+'-'+scaleName+'.wav', encodeWav16(L,R,ctx.sampleRate), 'audio/wav');
+      if(b){ b.textContent='saved ✓'; setTimeout(()=>b.textContent='● rec',1500); } } }
+  function buildHash(){ return '#v2/'+[scaleName,pitchMode,revOn?1:0,
+      $('size').value,$('density').value,$('pitch').value,$('position').value,
+      $('spread').value,$('space').value,$('level').value,$('tone').value,$('drift').value].join('/'); }
+  function parseHash2(h){ h=decodeURIComponent(String(h||'').replace(/^#/,''));
+    const p=h.split('/'); if(p[0]!=='v2'||p.length<13) return null;
+    if(!SCALES[p[1]]) return null;
+    const mode=p[2]==='nat'?'nat':'tune', rev=p[3]==='1';
+    const nums=p.slice(4,13).map(x=>{ x=+x; return isFinite(x)?Math.min(100,Math.max(0,Math.round(x))):null; });
+    if(nums.length!==9||nums.some(v=>v===null)) return null;
+    const [size,dens,pit,pos,spr,spa,lev,ton,dri]=nums;
+    return {scale:p[1],mode,rev,size,dens,pit,pos,spr,spa,lev,ton,dri}; }
+  function applyHashPatch(){ const c=parseHash2(location.hash); if(!c) return false;
+    scaleName=c.scale; pitchMode=c.mode; revOn=c.rev;
+    $('size').value=c.size; $('density').value=c.dens; $('pitch').value=c.pit; $('position').value=c.pos;
+    $('spread').value=c.spr; $('space').value=c.spa; $('level').value=c.lev; $('tone').value=c.ton; $('drift').value=c.dri;
+    [...$('scalerow').querySelectorAll('.btn[data-scale]')].forEach(x=>x.setAttribute('aria-pressed', x.dataset.scale===scaleName?'true':'false'));
+    if($('revBtn'))$('revBtn').setAttribute('aria-pressed',revOn?'true':'false');
+    return true; }
+  function spawnGrain(when, rate){
+    if(!srcBuffer) return;
+    const dur=grainMs/1000;
+    const mod=modNow();
+    const effSpread=Math.min(0.5, spread + (mod?mod.spread:0));
+    let pos=scanPos + (Math.random()*2-1)*effSpread; pos=((pos%1)+1)%1;
+    const offset=pos*Math.max(0.05, srcBuffer.duration-dur-0.01);
+    const useRev=(revOn || (mod&&mod.rev)) && srcBufferRev;
+    const src=ctx.createBufferSource(); src.buffer=useRev?srcBufferRev:srcBuffer;
+    const detune=Math.pow(2,((Math.random()*2-1)*6)/1200);
+    src.playbackRate.value=rate*(mod?mod.rate:1)*detune;
+    const g=ctx.createGain(); g.gain.value=0; let node=g;
+    if(ctx.createStereoPanner){ const p=ctx.createStereoPanner(); p.pan.value=(Math.random()*2-1)*0.6; g.connect(p); node=p; }
+    src.connect(g); node.connect(grainBus);
+    const gain=clamp(0.5/Math.sqrt(Math.max(2,density)),0.05,0.4)*level;
+    const half=dur*0.5;
+    g.gain.setValueAtTime(0,when); g.gain.linearRampToValueAtTime(gain,when+half); g.gain.linearRampToValueAtTime(0,when+dur);
+    try{ src.start(when,Math.max(0,offset),dur+0.02); src.stop(when+dur+0.05); }catch(e){}
+    if(gparts.length<110) gparts.push({x:pos, born:T, life:0.4+Math.random()*0.35});
+  }
+  function scheduler(){
+    if(!running) return;
+    const md=modNow();
+    const ahead=ctx.currentTime+0.12, interval=1/Math.max(1,density*(md?md.dens:1)); let guard=0;
+    while(nextGrainTime<ahead && guard++<200){
+      if(alivePool.length){ const c=alivePool[(Math.random()*alivePool.length)|0];
+        const rate=(pitchMode==='nat')? baseRate() : c.ratioVal*baseRate();
+        spawnGrain(nextGrainTime, rate); }
+      nextGrainTime += interval*(0.55+Math.random()*0.9);
+    }
+    if(nextGrainTime<ctx.currentTime) nextGrainTime=ctx.currentTime+0.02;
+    schedTimer=setTimeout(scheduler,25);
+  }
+
+  // ---- formation ----
+  function buildFormation(){
+    const sc=SCALES[scaleName]; cols=sc.length; rows=4; cells=[];
+    for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){
+      const ratio=sc[c], oct=ROW_OCT[r];
+      cells.push({col:c,row:r,alive:true,type:r<2?0:1,ratioVal:(ratio[0]/ratio[1])*Math.pow(2,oct),
+        ratio:ratio, num:ratio[0], den:ratio[1]});
+    }
+    rebuildPool(); marchX=0; marchY=0; marchDir=1; score=0;
+  }
+  function rebuildPool(){ alivePool=cells.filter(c=>c.alive); }
+  function aliveFrac(){ return cells.length? alivePool.length/cells.length : 0; }
+
+  function destroyCell(c){ if(!c.alive) return; c.alive=false; rebuildPool(); score+=10;
+    booms.push({x:c._x,y:c._y,born:T,life:0.35});
+    if(score>hiscore) hiscore=score;
+    if(!alivePool.length && !awaitRefill){ awaitRefill=true; score+=50; if(score>hiscore)hiscore=score;
+      setTimeout(()=>{ wave++; waveFlash=T; cells.forEach(x=>x.alive=true); rebuildPool(); awaitRefill=false; }, 1100); } }
+  function reviveCell(c){ if(c.alive) return; c.alive=true; rebuildPool();
+    booms.push({x:c._x,y:c._y,born:T,life:0.2,spawn:true}); }
+
+  // ---- geometry / hit-testing (computed each frame, stored on cells) ----
+  let geo={gx:0,gy:0,cw:0,ch:0,cannonY:0};
+  function layout(W,H){
+    const panelH=$('panel').getBoundingClientRect().height||170;
+    const playB=H-panelH-10;
+    const gridW=W*0.84, gx=(W-gridW)/2, cw=gridW/cols;
+    const gridH=Math.min((playB-H*0.16)*0.62, H*0.46), ch=gridH/rows, gy=H*0.15;
+    geo={gx,gy,cw,ch,cannonY:playB-22, playB};
+    for(const c of cells){ c._x=gx+(c.col+0.5)*cw + marchX; c._y=gy+(c.row+0.5)*ch + marchY; }
+  }
+  function cellAt(px,py){
+    let best=null,bd=1e9;
+    for(const c of cells){ const dx=px-c._x, dy=py-c._y; const d=dx*dx+dy*dy;
+      if(Math.abs(dx)<geo.cw*0.5 && Math.abs(dy)<geo.ch*0.5 && d<bd){ bd=d; best=c; } }
+    return best;
+  }
+  let cannonX=0;
+  function shootAt(c){ bullets.push({x:c._x, y:geo.cannonY, target:c}); cannonX=c._x; firedOnce=true; }
+
+  // ---- sprites ----
+  const SQUID0=["..X...X..","...X.X...","..XXXXX..",".XX.X.XX.","XXXXXXXXX","X.XXXXX.X","X.X...X.X","...X.X..."];
+  const SQUID1=["..X...X..","X..X.X..X","X.XXXXX.X","XXX.X.XXX","XXXXXXXXX",".XXXXXXX.","..X...X..",".X.....X."];
+  const CRAB0 =["..X....X..","X..X..X..X","X.XXXXXX.X","XXX.XX.XXX","XXXXXXXXXX",".X.XXXX.X.","X........X",".XX....XX."];
+  const CRAB1 =["..X....X..",".X.X..X.X.",".XXXXXXXX.","XX.XXXX.XX","XXXXXXXXXX","X.XXXXXX.X","X.X....X.X","...XXXX..."];
+  const CANNON=[".....X.....","....XXX....","....XXX....",".XXXXXXXXX.","XXXXXXXXXXX","XXXXXXXXXXX"];
+  const UFO=["....XXXX....","..XXXXXXXX..",".XXXXXXXXXX.",".X..X..X..X."];
+  function drawSprite(g,map,cx,cy,px,color,alpha){
+    const w=map[0].length, h=map.length; const ox=cx-(w*px)/2, oy=cy-(h*px)/2;
+    g.fillStyle=color; g.globalAlpha=alpha==null?1:alpha;
+    for(let r=0;r<h;r++){ const row=map[r]; for(let q=0;q<w;q++) if(row[q]==='X') g.fillRect(Math.round(ox+q*px),Math.round(oy+r*px),Math.ceil(px),Math.ceil(px)); }
+    g.globalAlpha=1;
+  }
+
+  // ---- visuals ----
+  const cv=$('screen'), g2=cv.getContext('2d'); let W=0,H=0,DPR=1, reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function resize(){ DPR=Math.min(2,window.devicePixelRatio||1); W=innerWidth; H=innerHeight; cv.width=W*DPR; cv.height=H*DPR; g2.setTransform(DPR,0,0,DPR,0,0); }
+  addEventListener('resize',resize); resize();
+
+  function marchStep(){
+    if(!ctx) return; const n=ctx.currentTime;
+    try{ marchGain.gain.cancelScheduledValues(n); marchGain.gain.setValueAtTime(marchGain.gain.value,n);
+      marchGain.gain.linearRampToValueAtTime(0.6,n+0.04); marchGain.gain.linearRampToValueAtTime(1,n+0.16); }catch(e){}
+  }
+  function pad(n,l){ n=Math.floor(n); let s=''+n; while(s.length<l) s='0'+s; return s; }
+
+  function loop(){
+    raf=requestAnimationFrame(loop);
+    const now=performance.now(), dt=Math.min(0.05,(now-lastFrame)/1000); lastFrame=now; T+=dt;
+    // march: speed rises as invaders are cleared (the classic accelerate)
+    if(running){
+      const speed=lerp(14,90,1-aliveFrac())*(geo.cw?geo.cw/60:1)*Math.min(1.6, 1+(wave-1)*0.09);
+      marchX += marchDir*speed*dt;
+      const lim=geo.cw*0.5;
+      if(marchX>lim){ marchX=lim; marchDir=-1; marchY+=geo.ch*0.12; stepTick(); }
+      else if(marchX<-lim){ marchX=-lim; marchDir=1; marchY+=geo.ch*0.12; stepTick(); }
+      // periodic anim/pulse even mid-sweep
+      marchStepT+=dt; const stepEvery=lerp(0.62,0.12,1-aliveFrac());
+      if(marchStepT>=stepEvery){ marchStepT=0; animFrame^=1; marchStep(); }
+    }
+    if(running && drift>0){ scanPos=(scanPos + dt*drift)%1; }
+    // ufo: crosses the top every so often — shoot it for a mystery modifier
+    if(running){
+      if(!ufo && T>nextUfoAt){ ufo={x:-40, y:H*0.105, v:lerp(40,90,Math.random())}; }
+      if(ufo){ ufo.x+=ufo.v*dt; if(ufo.x>W+40){ ufo=null; nextUfoAt=T+16+Math.random()*18; } }
+    }
+    layout(W,H);
+    g2.clearRect(0,0,W,H);
+    drawHeader();
+    // invaders
+    for(const c of cells){ if(!c.alive) continue;
+      const map=c.type===0?(animFrame?SQUID1:SQUID0):(animFrame?CRAB1:CRAB0);
+      const px=Math.max(2,geo.cw*0.072);
+      drawSprite(g2,map,c._x,c._y,px, c.type===0?'#7dff90':'#54f06a');
+    }
+    // bullets
+    g2.fillStyle='#ffffff';
+    for(let i=bullets.length-1;i>=0;i--){ const b=bullets[i]; b.y-=Math.max(6,H*0.012);
+      g2.fillRect(b.x-1,b.y,2,10);
+      if(b.target && (!b.target.alive || b.y<=b.target._y)){ if(b.target.alive) destroyCell(b.target); bullets.splice(i,1); }
+      else if(b.y<0) bullets.splice(i,1);
+    }
+    // explosions
+    for(let i=booms.length-1;i>=0;i--){ const e=booms[i]; const k=(T-e.born)/e.life;
+      if(k>=1){ booms.splice(i,1); continue; }
+      const s=geo.cw*0.5*(e.spawn?(1-k):k), a=1-k; g2.strokeStyle=e.spawn?'#54f06a':'#ffd34d'; g2.globalAlpha=a; g2.lineWidth=2;
+      g2.beginPath(); g2.moveTo(e.x-s,e.y); g2.lineTo(e.x+s,e.y); g2.moveTo(e.x,e.y-s); g2.lineTo(e.x,e.y+s);
+      g2.moveTo(e.x-s*0.7,e.y-s*0.7); g2.lineTo(e.x+s*0.7,e.y+s*0.7); g2.moveTo(e.x+s*0.7,e.y-s*0.7); g2.lineTo(e.x-s*0.7,e.y+s*0.7); g2.stroke(); g2.globalAlpha=1;
+    }
+    // cannon
+    cannonX += ((bullets.length?bullets[bullets.length-1].x:cannonX)-cannonX)*0.2;
+    if(!cannonX) cannonX=W/2;
+    drawSprite(g2,CANNON,cannonX,geo.cannonY,Math.max(2,geo.cw*0.08),'#54f06a');
+    // ---- granulation viz: source terrain + scanner + grain-shots ----
+    const sx=geo.gx, sw=W-2*geo.gx, sh=18, sy=geo.cannonY-30;
+    if(peaks){
+      g2.fillStyle='#0e4a1f';
+      const bw=sw/peaks.length;
+      for(let i=0;i<peaks.length;i++){ const h=1.5+peaks[i]*sh; g2.fillRect(sx+i*bw, sy+(sh-h), Math.ceil(bw)+0.4, h); }
+      // spread band + scanner bracket (width tracks grain size)
+      const cxp=sx+scanPos*sw, band=Math.max(3, spread*sw);
+      g2.fillStyle='rgba(255,211,77,0.10)'; g2.fillRect(cxp-band, sy-3, band*2, sh+6);
+      const bw2=Math.max(7, (grainMs/1500)*70);
+      g2.strokeStyle='#ffd34d'; g2.lineWidth=2; g2.strokeRect(cxp-bw2/2, sy-4, bw2, sh+8);
+      g2.fillStyle='#1f7a34'; g2.font='8px "Courier New",monospace'; g2.textAlign='left'; g2.textBaseline='top';
+      g2.fillText('SOURCE', sx, sy+sh+3);
+    }
+    // grain-shots rising from the scanner into the formation
+    for(let i=gparts.length-1;i>=0;i--){ const p=gparts[i], k=(T-p.born)/p.life;
+      if(k>=1){ gparts.splice(i,1); continue; }
+      const x=sx+p.x*sw, y=lerp(sy, geo.gy+rows*geo.ch*0.45, k);
+      g2.globalAlpha=(1-k)*0.85; g2.fillStyle='#fff7cc'; g2.fillRect(x-1, y-3, 2, 5); g2.globalAlpha=1;
+    }
+    // ufo
+    if(ufo){ drawSprite(g2,UFO,ufo.x,ufo.y,Math.max(2,geo.cw*0.06),'#ff6ec7');
+      g2.fillStyle='#ff6ec7'; g2.font='8px "Courier New",monospace'; g2.textAlign='center'; g2.textBaseline='bottom';
+      g2.globalAlpha=0.8; g2.fillText('?? MYSTERY ??', ufo.x, ufo.y-12); g2.globalAlpha=1; g2.textBaseline='top'; }
+    // wave flash
+    if(T-waveFlash<1.6){ const k=(T-waveFlash)/1.6;
+      g2.globalAlpha=1-k; g2.fillStyle='#ffd34d'; g2.font='bold 20px "Courier New",monospace';
+      g2.textAlign='center'; g2.textBaseline='middle'; g2.fillText('WAVE '+wave, W/2, H*0.42); g2.globalAlpha=1; g2.textBaseline='top'; }
+    // baseline
+    g2.fillStyle='#1f7a34'; g2.fillRect(geo.gx, geo.cannonY+14, W-2*geo.gx, 2);
+    // first-run prompt
+    if(running && !firedOnce){ g2.globalAlpha=0.45+0.55*Math.abs(Math.sin(T*3));
+      g2.fillStyle='#ffd34d'; g2.font='bold 12px "Courier New",monospace'; g2.textAlign='center'; g2.textBaseline='bottom';
+      g2.fillText('▲ TAP AN INVADER TO FIRE', W/2, geo.cannonY-16); g2.globalAlpha=1; g2.textBaseline='top'; }
+  }
+  let animFrame=0;
+  function stepTick(){ /* reserved: per-edge events */ }
+
+  function drawHeader(){
+    g2.fillStyle='#54f06a'; g2.font='bold 12px "Courier New",monospace'; g2.textBaseline='top';
+    g2.textAlign='left';  g2.fillText('SCORE  '+pad(score,4), geo.gx, H*0.045);
+    g2.textAlign='center';g2.fillText('HI '+pad(hiscore,4), W/2, H*0.045);
+    g2.textAlign='right'; g2.fillText(alivePool.length+' PARTIALS', W-geo.gx, H*0.045);
+    g2.textAlign='center'; g2.fillStyle='#1f7a34'; g2.font='10px "Courier New",monospace';
+    g2.fillText('WAVE '+wave+'  '+srcName.toUpperCase()+'  '+scaleName.toUpperCase()+'  '+Math.round(density)+'/S', W/2, H*0.045+16);
+    const mm=modNow();
+    if(mm){ g2.fillStyle='#ff6ec7'; g2.font='bold 10px "Courier New",monospace';
+      g2.fillText('★ '+mm.n+' '+Math.ceil(activeMod.until-T)+'s', W/2, H*0.045+30); }
+    g2.textAlign='left';
+  }
+
+  // ---- input: tap an invader to shoot it; tap an empty cell to revive ----
+  cv.addEventListener('pointerdown', e=>{
+    if(!running) return;
+    const x=e.clientX, y=e.clientY;
+    if(y>geo.playB) return;                 // ignore taps over the control panel zone
+    if(ufo && Math.abs(x-ufo.x)<geo.cw*0.6 && Math.abs(y-ufo.y)<geo.ch*0.55){
+      booms.push({x:ufo.x,y:ufo.y,born:T,life:0.5}); score+=100; if(score>hiscore)hiscore=score;
+      activeMod={i:(Math.random()*MODS.length)|0, until:T+15};
+      ufo=null; nextUfoAt=T+18+Math.random()*18; firedOnce=true; return; }
+    const c=cellAt(x,y);
+    if(c){ if(c.alive) shootAt(c); else reviveCell(c); }
+  });
+
+  // ---- UI ----
+  function mapAll(){
+    grainMs=Math.round(lerp(15,1500,Math.pow(+$('size').value/100,1.7)));
+    density=Math.round(lerp(2,55,Math.pow(+$('density').value/100,1.4)));
+    rootSt=Math.round(lerp(-12,12,+$('pitch').value/100));
+    position=+$('position').value/100; scanPos=position;
+    spread=Math.pow(+$('spread').value/100,1.5)*0.5;
+    space=+$('space').value/100*0.7;
+    level=+$('level').value/100;
+    tone=+$('tone').value/100;
+    drift=Math.pow(+$('drift').value/100,1.6)*0.09;   // up to ~1 pass / 11s
+    if(wet) wet.gain.setTargetAtTime(space, ctx.currentTime, 0.1);
+    if(filter) filter.frequency.setTargetAtTime(500*Math.pow(24,tone), ctx.currentTime, 0.08);
+    $('vSize').textContent=grainMs>=1000?(grainMs/1000).toFixed(1)+'s':grainMs+'ms';
+    $('vDens').textContent=density+'/s'; $('vPitch').textContent=(rootSt>0?'+':'')+rootSt+'st';
+    $('vPos').textContent=Math.round(position*100); $('vSpread').textContent=Math.round(+$('spread').value);
+    $('vSpace').textContent=Math.round(space/0.7*100); $('vLevel').textContent=$('level').value;
+    $('vTone').textContent=Math.round(500*Math.pow(24,tone))>=1000?(500*Math.pow(24,tone)/1000).toFixed(1)+'k':Math.round(500*Math.pow(24,tone))+'';
+    $('vDrift').textContent=drift>0? (drift*60).toFixed(1)+'/min':'off';
+  }
+  ['size','density','pitch','position','spread','space','level','tone','drift'].forEach(id=>$(id).addEventListener('input',mapAll));
+  function setMode(){ $('mTune').setAttribute('aria-pressed',pitchMode==='tune'?'true':'false'); $('mNat').setAttribute('aria-pressed',pitchMode==='nat'?'true':'false'); }
+  $('mTune').addEventListener('click',()=>{ pitchMode='tune'; setMode(); });
+  $('mNat').addEventListener('click',()=>{ pitchMode='nat'; setMode(); });
+  $('revBtn').addEventListener('click',()=>{ revOn=!revOn; $('revBtn').setAttribute('aria-pressed',revOn?'true':'false'); });
+  $('recBtn').addEventListener('click', toggleRecord);
+  $('formrow').addEventListener('click',e=>{ const b=e.target.closest('.btn[data-shape]'); if(!b) return;
+    const shp=b.dataset.shape; cells.forEach(c=>c.alive=shapeMask(shp,c.row,c.col)); rebuildPool(); });
+  $('linkBtn').addEventListener('click',()=>{
+    const link=location.origin+location.pathname+buildHash();
+    const done=()=>{ $('linkBtn').textContent='copied ✓'; setTimeout(()=>$('linkBtn').textContent='link',1300); };
+    if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(done,()=>prompt('copy this patch link:',link));
+    else prompt('copy this patch link:',link); });
+
+  function pickTone(name){ setSource(makeBuiltin(name),name);
+    [...$('srcrow').querySelectorAll('.btn[data-tone]')].forEach(b=>b.setAttribute('aria-pressed', b.dataset.tone===name?'true':'false')); }
+  $('srcrow').addEventListener('click',e=>{ const b=e.target.closest('.btn[data-tone]'); if(b){ ensureCtx(); pickTone(b.dataset.tone); } });
+  $('srcLoad').addEventListener('click',()=>$('file').click());
+  $('file').addEventListener('change', async e=>{
+    const f=e.target.files&&e.target.files[0]; if(!f) return; ensureCtx(); if(ctx.state==='suspended') ctx.resume();
+    if(f.size===0){ srcName='empty file'; return; }
+    try{ const ab=await ctx.decodeAudioData((await f.arrayBuffer()).slice(0));
+      const len=ab.length, mono=ctx.createBuffer(1,len,ab.sampleRate), md=mono.getChannelData(0), ch=ab.numberOfChannels;
+      for(let cc=0;cc<ch;cc++){ const dd=ab.getChannelData(cc); for(let i=0;i<len;i++) md[i]+=dd[i]/ch; }
+      setSource(mono,(f.name||'file').replace(/\.[^.]+$/,'').slice(0,12));
+      [...$('srcrow').querySelectorAll('.btn[data-tone]')].forEach(b=>b.setAttribute('aria-pressed','false'));
+    }catch(err){ srcName='read error'; }
+  });
+  $('scalerow').addEventListener('click',e=>{ const b=e.target.closest('.btn[data-scale]'); if(!b) return;
+    scaleName=b.dataset.scale; [...$('scalerow').querySelectorAll('.btn[data-scale]')].forEach(x=>x.setAttribute('aria-pressed', x.dataset.scale===scaleName?'true':'false')); buildFormation(); });
+  $('reset').addEventListener('click', ()=>{ cells.forEach(c=>c.alive=true); rebuildPool(); });
+
+  function start(){
+    ensureCtx(); if(ctx.state==='suspended') ctx.resume();
+    if(!srcBuffer) setSource(makeBuiltin('glass'),'glass');
+    buildFormation(); mapAll(); running=true; nextGrainTime=ctx.currentTime+0.05;
+    grainBus.gain.cancelScheduledValues(ctx.currentTime); grainBus.gain.setValueAtTime(0.0001,ctx.currentTime);
+    grainBus.gain.exponentialRampToValueAtTime(1,ctx.currentTime+1.4);
+    scheduler(); if(!raf){ lastFrame=performance.now(); loop(); }
+  }
+  applyHashPatch();
+  if(typeof window!=='undefined') window.__INV={SCALES, MODS, shapeMask, parseHash2, buildHash, encodeWav16};
+  $('begin').addEventListener('click',()=>{ ensureCtx(); $('gate').classList.add('hide'); $('panel').classList.add('show'); start(); });
+  document.addEventListener('visibilitychange',()=>{ if(ctx&&!document.hidden&&running) ctx.resume().catch(()=>{}); });
+
+  var man=$('manual'); $('manualBtn').addEventListener('click',()=>man.classList.add('show'));
+})();
+</script>
+
+<div class="manual-ov" id="manual">
+  <div class="mcard">
+    <button class="close" id="manualClose" type="button">close</button>
+    <h2>How to play it</h2>
+    <p>This is a granular synth you play by clearing the board. It's a real instrument wearing an arcade — the game mechanics <i>are</i> the synthesis controls.</p>
+    <h3>The formation is the spectrum</h3>
+    <p>Every invader is a partial of one big drone. <b>Columns</b> are scale degrees (tuned in just intonation), <b>rows</b> are octaves — top row highest, bottom row lowest. A full formation is a thick, rich drone. The grain engine fires tiny slices of your source sound at the pitches of whichever invaders are still alive, so the fuller the board, the denser the spectrum.</p>
+    <h3>Shoot to sculpt</h3>
+    <p>Tap an invader: the cannon fires, it explodes, and that partial drops out of the drone. Carve a wall of sound down to a thin shimmer by picking off invaders — additive synths build up, this one sculpts by <b>subtraction</b>. Tap an empty slot to bring a partial back, or hit <b>new wave</b> to refill the whole spectrum.</p>
+    <h3>The march is the clock</h3>
+    <p>The formation marches and speeds up as invaders die — and that drives a tremolo pulse on the cloud, so as you thin the drone it accelerates. Clearing the board doesn't just quieten it, it changes its rhythm.</p>
+    <h3>Tune vs natural — and why a track sounds like itself</h3>
+    <p>In <b>tune</b> mode the formation re-pitches every grain onto its just-intonation spectrum — so any source becomes the same drone chord, only its timbre changes. That's the signature sound, but it means different tracks can sound alike. Switch to <b>natural</b> and grains keep the track's <i>own</i> pitch, so your songs sound like themselves; the invaders then thin the texture rather than set the harmony. Either way, <b>longer grains</b> keep recognisable pieces of the track instead of a smear — push grain up and a vocal stays a vocal.</p>
+    <h3>Controls</h3>
+    <p><b>source</b> — load your own sound or use glass / sine / noise / bell. <b>scale</b> — which ratios the columns use (tune mode). <b>grain</b> — slice length, up to 1.5s (short = textural, long = the track speaks). <b>density</b> — grains per second. <b>pitch</b> — transpose. <b>position</b> — where in the sound grains are read from (scrub it). <b>spread</b> — how far across the file grains are scattered. <b>space</b> — reverb. <b>level</b> — output.</p>
+    <h3>The terrain &amp; scanner</h3>
+    <p>The waveform along the bottom is your source. The amber bracket is the scanner — where grains are being read from; its width follows grain size, the faint band is spread. The little white shots rising from it are grains being fired up into the formation. Move <b>position</b> and watch the scanner travel the track.</p>
+    <h3>New in the supersized edition</h3>
+    <p><b>The UFO.</b> Every so often a pink saucer crosses the top. Shoot it: +100 and a random <b>mystery modifier</b> takes hold for 15 seconds — octave up, sub octave, double density, time smear or reverse. It's a slot machine for your drone.</p>
+    <p><b>Waves.</b> Clear the whole board and it refills as WAVE 2 with a +50 bonus — each wave marches a little faster, so deep runs get twitchier.</p>
+    <p><b>Formations.</b> full / odd / high / low / sparse instantly sculpt the spectrum — odd keeps alternate columns (open, hollow), high is shimmer only, low is sub-drone only.</p>
+    <p><b>● rec</b> captures the live output and saves a WAV when you stop (up to 10 minutes) — performances here are unrepeatable, so record the good ones. <b>rev grains</b> plays every grain backwards. <b>tone</b> is a filter from dark to airy. <b>drift</b> slowly auto-scans the source so it plays itself — set it, put the phone down, and shoot things. <b>link</b> copies a URL with all your settings baked in, like the other instruments in the series.</p>
+    <h3>Tips</h3>
+    <p>To hear a track clearly: natural mode, long grains, low density, move position around. For the choir-drone: tune mode, long grains, high density, then shoot it down to a single held partial. Long grains + very high density is heavy — back off density if it strains. On iPhone open it in Safari, not inside WhatsApp.</p>
+  </div>
+</div>
+<script>
+  (function(){ var m=document.getElementById('manual'); document.getElementById('manualClose').addEventListener('click',function(){ m.classList.remove('show'); }); })();
+</script>
+</body>
+</html>

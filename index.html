@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#07080f">
+<title>Babar's Ambient Instruments</title>
+<style>
+  :root{ --bg:#07080f; --ink:#e8ecf7; --dim:#8792b3; --line:#1c2440;
+    --disp:'Helvetica Neue',Arial,sans-serif; --mono:ui-monospace,'SF Mono',Menlo,Consolas,monospace; }
+  *{box-sizing:border-box}
+  html{touch-action:manipulation}
+  body{margin:0; min-height:100dvh; background:
+    radial-gradient(90% 60% at 50% 0%, #10162e 0%, var(--bg) 60%);
+    color:var(--ink); font-family:var(--disp); padding:44px 18px calc(44px + env(safe-area-inset-bottom));
+    display:flex; flex-direction:column; align-items:center; -webkit-font-smoothing:antialiased}
+  header{text-align:center; margin-bottom:34px}
+  h1{margin:0; font-weight:300; font-size:clamp(26px,6vw,42px); letter-spacing:.3em; text-indent:.3em; text-transform:uppercase}
+  .sub{margin:12px 0 0; font-family:var(--mono); font-size:11px; letter-spacing:.22em; text-transform:uppercase; color:var(--dim)}
+
+  .grid{display:grid; grid-template-columns:1fr; gap:16px; width:100%; max-width:560px}
+  @media (min-width:720px){ .grid{max-width:920px; grid-template-columns:1fr 1fr} }
+  a.card{display:flex; align-items:center; gap:18px; text-decoration:none; color:var(--ink);
+    border:1px solid var(--line); border-radius:16px; padding:20px 20px; background:rgba(255,255,255,.015);
+    transition:transform .25s ease, box-shadow .25s ease, border-color .25s ease}
+  a.card:hover, a.card:focus-visible{transform:translateY(-2px); outline:none}
+  .orb{flex:0 0 auto; width:58px; height:58px; border-radius:50%}
+  .card h2{margin:0 0 5px; font-size:19px; font-weight:600; letter-spacing:.02em}
+  .card p{margin:0; font-size:13px; line-height:1.65; color:var(--dim)}
+  .card .tag{display:inline-block; margin-top:8px; font-family:var(--mono); font-size:9px; letter-spacing:.16em; text-transform:uppercase; color:var(--dim); border:1px solid var(--line); border-radius:999px; padding:4px 10px}
+
+  .c-swell .orb{background:radial-gradient(circle at 35% 30%, #dfe9ff, #9db8ff 45%, #22315f 100%); box-shadow:0 0 44px -8px #9db8ff}
+  .c-swell:hover{border-color:#9db8ff; box-shadow:0 0 60px -22px #9db8ff}
+  .c-hal .orb{background:radial-gradient(circle at 50% 45%, #fff7cc 0%, #ffd34d 10%, #e8392a 38%, #40060a 100%); box-shadow:0 0 44px -8px #e8392a}
+  .c-hal:hover{border-color:#e8392a; box-shadow:0 0 60px -22px #e8392a}
+  .c-gen .orb{background:radial-gradient(circle at 35% 30%, #f6f4ee, #c9c6ba 55%, #16204c 100%); box-shadow:0 0 44px -10px #d8d5c8}
+  .c-gen:hover{border-color:#8a91b5; box-shadow:0 0 60px -24px #d8d5c8}
+  .c-oracle .orb{background:radial-gradient(circle at 40% 32%, #f6e7c8, #b98ae0 50%, #241436 100%); box-shadow:0 0 44px -8px #b98ae0}
+  .c-oracle:hover{border-color:#b98ae0; box-shadow:0 0 60px -22px #b98ae0}
+  .c-inv .orb{background:radial-gradient(circle at 40% 32%, #bfffcb, #54f06a 45%, #06240d 100%); box-shadow:0 0 44px -8px #54f06a}
+  .c-inv:hover{border-color:#54f06a; box-shadow:0 0 60px -22px #54f06a}
+
+  footer{margin-top:40px; text-align:center; font-family:var(--mono); font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--dim); line-height:2.1}
+  :focus-visible{outline:2px solid #9db8ff; outline-offset:3px}
+  @media (prefers-reduced-motion:reduce){ a.card{transition:none} }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Babar's<br>Ambient Instruments</h1>
+    <p class="sub">a small studio of slow machines</p>
+  </header>
+
+  <nav class="grid" aria-label="instruments">
+    <a class="card c-swell" href="swell-slow-chord-machine.html">
+      <span class="orb" aria-hidden="true"></span>
+      <span>
+        <h2>SWELL</h2>
+        <p>The slow chord machine. Five huge buttons, chords that glide into each other. Start here.</p>
+        <span class="tag">play · learn · record</span>
+      </span>
+    </a>
+
+    <a class="card c-hal" href="hal-90026-ipad-edition.html">
+      <span class="orb" aria-hidden="true"></span>
+      <span>
+        <h2>HAL 90026</h2>
+        <p>A self-evolving microtonal drone in seven just-intonation tunings. Binaural, reverberant, records itself.</p>
+        <span class="tag">drone · meditate · record</span>
+      </span>
+    </a>
+
+    <a class="card c-gen" href="ambient-music-generator-studio.html">
+      <span class="orb" aria-hidden="true"></span>
+      <span>
+        <h2>Ambient Music Generator</h2>
+        <p>The studio: generative patterns, melodies, mixer, effects — exports MIDI, WAV and stems for your DAW.</p>
+        <span class="tag">compose · sequence · export</span>
+      </span>
+    </a>
+
+    <a class="card c-inv" href="invaders-granular-supersized.html">
+      <span class="orb" aria-hidden="true"></span>
+      <span>
+        <h2>Space Invaders Granular</h2>
+        <p>A granular synth you play by shooting the drone. Load a track, sculpt its spectrum, chase the mystery UFO.</p>
+        <span class="tag">play · sculpt · record</span>
+      </span>
+    </a>
+
+    <a class="card c-oracle" href="ambient-oracle-v2.html">
+      <span class="orb" aria-hidden="true"></span>
+      <span>
+        <h2>The Ambient Oracle</h2>
+        <p>Answer eight questions — or let it listen — and it divines which ambient artist your track descends from.</p>
+        <span class="tag">divine · analyse · share</span>
+      </span>
+    </a>
+  </nav>
+
+  <footer>
+    everything runs on your device · nothing is uploaded<br>
+    add this page to your home screen and the whole studio is one tap away
+  </footer>
+</body>
+</html>
