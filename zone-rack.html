@@ -72,6 +72,7 @@
     <button class="sb" id="sceneSave" type="button">▤ save scene</button>
     <button class="sb" id="sceneOpen" type="button">▤ open scene</button>
     <button class="sb" id="midiBtn" type="button">midi: off</button>
+    <span class="sb" id="clockLbl" style="cursor:default">clock: internal</span>
     <input type="file" id="sceneFile" accept="application/json,.json" hidden>
   </div>
   <div class="foot">the zone rack · instruments run side by side · faders balance the layers · nothing uploaded</div>
@@ -81,6 +82,8 @@
 (function(){
 const INSTRUMENTS=[
   {id:'gen',   label:'Generator', file:'ambient-music-generator-studio.html', c:'#c9c6ba'},
+  {id:'mr',    label:'Machine Rmnce',file:'machine-romance.html',              c:'#e5006d'},
+  {id:'nh',    label:'Night Haul', file:'night-haul.html',                     c:'#ff8a3d'},
   {id:'swell', label:'Swell',     file:'swell-slow-chord-machine.html',       c:'#9db8ff'},
   {id:'gran',  label:'Granular',  file:'babars-granular-synth.html',          c:'#ff9d5c'},
   {id:'hal',   label:'HAL 90026', file:'hal-90026-ipad-edition.html',         c:'#e8392a'},
@@ -115,7 +118,7 @@ function show(id){
     const f=document.createElement('iframe');
     f.src=ins.file; f.title=ins.label;
     f.setAttribute('allow','autoplay');
-    f.addEventListener('load',()=>sendMix(id));
+    f.addEventListener('load',()=>{ sendMix(id); if(CLK.ext) try{ f.contentWindow.postMessage({type:'zone-clock', sixteenth:0, bpm:CLK.bpm},'*'); }catch(e){} });
     stage.appendChild(f); frames[id]=f;
   }
   cur=id;
@@ -180,17 +183,42 @@ document.getElementById('sceneOpen').addEventListener('click',()=>document.getEl
 document.getElementById('sceneFile').addEventListener('change',e=>{ const f=e.target.files&&e.target.files[0]; e.target.value=''; if(!f)return;
   const r=new FileReader(); r.onload=()=>applyScene(parseScene(r.result)); r.readAsText(f); });
 
+// ── midi clock: lock everything to the Polyend ──
+const CLK={ ext:false, ticks:0, last:0, bpm:0, times:[] };
+function broadcast(msg){ for(const k in frames){ try{ frames[k].contentWindow.postMessage(msg,'*'); }catch(e){} } }
+function onClockByte(b){
+  if(b===0xF8){ // 24 ppqn tick
+    const now=(typeof performance!=='undefined'?performance.now():Date.now());
+    if(CLK.last){ CLK.times.push(now-CLK.last); if(CLK.times.length>48)CLK.times.shift();
+      const avg=CLK.times.reduce((a,x)=>a+x,0)/CLK.times.length;
+      CLK.bpm=Math.round(60000/(avg*24)); }
+    CLK.last=now; CLK.ext=true;
+    CLK.ticks++;
+    // forward a 16th-note pulse (every 6 ticks) so instruments can step in time
+    if(CLK.ticks%6===0) broadcast({type:'zone-clock', sixteenth:CLK.ticks/6, bpm:CLK.bpm});
+    const lbl=document.getElementById('clockLbl'); if(lbl)lbl.textContent='clock: '+(CLK.bpm||'…')+' bpm';
+  } else if(b===0xFA){ CLK.ticks=0; CLK.times=[]; CLK.last=0; broadcast({type:'zone-transport', run:true}); }
+  else if(b===0xFC){ broadcast({type:'zone-transport', run:false}); }
+  else if(b===0xFB){ broadcast({type:'zone-transport', run:true}); } // continue
+}
 // ── midi in: CC1-7 = channel faders, CC8 = master, notes 36-42 = tabs ──
 function midiMap(st,d1,d2){ const kind=st&0xF0;
   if(kind===0xB0){ if(d1>=1&&d1<=7) return {kind:'fader', id:INSTRUMENTS[d1-1].id, val:Math.round(d2/127*100)};
     if(d1===8) return {kind:'fader', id:'master', val:Math.round(d2/127*100)}; return null; }
-  if(kind===0x90&&d2>0){ const i=d1-36; if(i>=0&&i<INSTRUMENTS.length) return {kind:'tab', id:INSTRUMENTS[i].id}; }
+  if(kind===0x90&&d2>0){ const i=d1-36; if(i>=0&&i<INSTRUMENTS.length&&d1<48) return {kind:'tab', id:INSTRUMENTS[i].id}; }
   return null; }
 document.getElementById('midiBtn').addEventListener('click',async()=>{
   const b=document.getElementById('midiBtn');
   if(!navigator.requestMIDIAccess){ b.textContent='midi: not on this device'; setTimeout(()=>b.textContent='midi: off',2200); return; }
   try{ const acc=await navigator.requestMIDIAccess();
-    const hook=()=>{ acc.inputs.forEach(inp=>{ inp.onmidimessage=m=>{ const a=midiMap(m.data[0],m.data[1],m.data[2]); if(!a)return;
+    const hook=()=>{ acc.inputs.forEach(inp=>{ inp.onmidimessage=m=>{
+      const st=m.data[0];
+      if(st>=0xF8){ onClockByte(st); return; }   // realtime: clock/start/stop/continue
+      const a=midiMap(st,m.data[1],m.data[2]);
+      if(!a){ // musical notes (outside the 36-42 tab band) go to the focused instrument
+        if((st&0xF0)===0x90 && m.data[2]>0 && cur && frames[cur]){
+          try{ frames[cur].contentWindow.postMessage({type:'zone-note', note:m.data[1], vel:m.data[2]},'*'); }catch(e){} }
+        return; }
       if(a.kind==='fader'){ MIX[a.id]=a.val; if(a.id==='master')sendAllMix(); else sendMix(a.id); renderMixer(); }
       else if(a.kind==='tab') show(a.id); }; }); };
     hook(); acc.onstatechange=hook;
@@ -202,7 +230,7 @@ async function wake(){ try{ if('wakeLock' in navigator) await navigator.wakeLock
 document.addEventListener('pointerdown',()=>{ if(Object.keys(frames).length) wake(); },{passive:true});
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&Object.keys(frames).length) wake(); });
 renderTabs();
-if(typeof window!=='undefined') window.__RACK={INSTRUMENTS, show, powerOff, frames:()=>Object.keys(frames), cur:()=>cur, MIX, gainFor, midiMap, sceneObj, parseScene, applyScene};
+if(typeof window!=='undefined') window.__RACK={INSTRUMENTS, show, powerOff, frames:()=>Object.keys(frames), cur:()=>cur, MIX, gainFor, midiMap, sceneObj, parseScene, applyScene, onClockByte, CLK};
 })();
 </script>
 </body>
